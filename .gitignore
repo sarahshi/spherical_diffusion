@@ -1,9 +1,11 @@
+# Sarah's files
+results/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
 *$py.class
 *.DS_Store
-Figures/Olivines.pdf
 
 # C extensions
 *.so
