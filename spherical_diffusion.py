@@ -63,8 +63,6 @@ print(S_mf_step_solution)
 
 # %%
 
-import sympy as sp
-
 # Function to get all roots for S_mf_step
 def get_S_mf_step_roots(S_FI_init_val, S_mf_init_val, X_FI_init_val, X_mf_init_val, KD_val):
     # Define symbols
@@ -126,9 +124,7 @@ test = get_single_mf_root(S_FI_init_val=0, S_mf_init_val=1400, X_FI_init_val=0.5
 test
 
 
-# ## Solving two more equations. 
-
-# %%
+# %% Solving two more equations. 
 
 
 def second_solve_step(X_mf_init, X_FI_init, S_mf_init, S_mf_step, S_FI_init, S_FI_step):
@@ -143,7 +139,6 @@ def second_solve_step(X_mf_init, X_FI_init, S_mf_init, S_mf_step, S_FI_init, S_F
     solutions = sp.solve([mass_constant, X_change], (X_mf_step, X_FI_step))
 
     return solutions
-
 
 # %%
 
@@ -167,6 +162,13 @@ def solve_one_mass_balance_step(S_FI_init_val, S_mf_init_val, X_FI_init_val, X_m
     X_mf_step_calc=results[X_mf_step]
 
     return S_mf_step_calc, S_FI_step_calc,  X_FI_step_calc, X_mf_step_calc
+
+
+def solve_one_mass_balance_step_spatial(S_FI_init_val, S_mf_init_val, mass_FI, mass_melt, KD_val):
+    # For the fluid inclusion, we assume S_FI = KD * S_mf.
+    S_mf_step_calc = (mass_melt * S_mf_init_val + mass_FI * S_FI_init_val) / (mass_melt + mass_FI * KD_val)
+    S_FI_step_calc = KD_val * S_mf_step_calc
+    return S_mf_step_calc, S_FI_step_calc
 
 
 # %% Let's set up some realistic geometry. 
@@ -209,17 +211,13 @@ S_mf_step_calc, S_FI_step_calc, X_FI_step_calc, X_mf_step_calc = solve_one_mass_
                                                                                              X_FI_init_val=mass_FI, X_mf_init_val=mass_melt, KD_val=KD)
 
 print('out of the function')
-print('S_mf_step_calc (ppm)')
-print(S_mf_step_calc)
+print('S_mf_step_calc (ppm):', S_mf_step_calc)
 
-print('S_FI_step_calc (ppm)')
-print(S_FI_step_calc)
+print('S_FI_step_calc (ppm):', S_FI_step_calc)
 
-print('X_FI_step_calc')
-print(X_FI_step_calc)
+print('X_FI_step_calc:', X_FI_step_calc)
 
-print('X_mf_step_calc')
-print(X_mf_step_calc)
+print('X_mf_step_calc:', X_mf_step_calc)
 
 
 # %% 
@@ -255,10 +253,9 @@ def convert_s_ppm_to_so2_molperc(S_ppm):
 
 # %% 
 
-
 def run_diffusion_spherical(D, radius_melt, radius_melt_film, radius_fluid_inclusion,
                             S_melt_init, S_FI_init, mass_FI, mass_melt, 
-                            KD, total_time=600, save_interval=5):
+                            KD, total_time=600, save_interval=1):
     """
     Simulate sulfur diffusion in spherical coordinates with a fluid inclusion and mass balance.
 
@@ -275,8 +272,8 @@ def run_diffusion_spherical(D, radius_melt, radius_melt_film, radius_fluid_inclu
         total_time (float): Total simulation time in seconds (default: 600s).
     """
 
-    ### Step 1: Setup grid and initial parameters
-    dr = radius_melt_film / 20  # Radial step size
+    ### Setup grid and initial parameters
+    dr = radius_melt_film   # Radial step size
     total_radius = (radius_melt + radius_melt_film + radius_fluid_inclusion)
     r = np.arange(0, total_radius + dr, dr)  # Radial grid
     Nr = len(r)  # Number of radial points
@@ -287,7 +284,7 @@ def run_diffusion_spherical(D, radius_melt, radius_melt_film, radius_fluid_inclu
     # Initialize concentration array
     C = np.full(Nr, S_melt_init, dtype=float)  # Initial concentration in melt
 
-    ### Step 2: Initial mass balance
+    ### Initial mass balance
     S_mf_initial, S_FI_initial, X_FI_initial, X_mf_initial = solve_one_mass_balance_step(
         S_FI_init_val=S_FI_init, 
         S_mf_init_val=S_melt_init,
@@ -298,7 +295,7 @@ def run_diffusion_spherical(D, radius_melt, radius_melt_film, radius_fluid_inclu
 
     print('Initial:', round(S_mf_initial, 4), round(S_FI_initial, 4), X_FI_initial, X_mf_initial)
 
-    ### Step 2: Define masks for geometry
+    ### Define masks for geometry
     fluid_inclusion_mask = r <= radius_fluid_inclusion
     melt_film_mask = (r > radius_fluid_inclusion) & (r <= radius_fluid_inclusion + radius_melt_film)
     melt_mask = r > radius_fluid_inclusion + radius_melt_film
@@ -307,13 +304,13 @@ def run_diffusion_spherical(D, radius_melt, radius_melt_film, radius_fluid_inclu
     C[r <= radius_fluid_inclusion] = S_FI_initial  # Initial concentration in fluid inclusion
     C[melt_film_mask] = S_mf_initial  # Melt film is set to the mass balance value (~65.94 ppm)
 
-    ### Step 3: Initialize storage for outputs
+    ### Initialize storage for outputs
     C_profile = np.zeros((time_steps // save_interval + 1, Nr))
     C_profile[0, :] = C
     S_FI_over_time = np.zeros(time_steps)
     S_mf_over_time = np.zeros(time_steps)
 
-    ### Step 4: Diffusion and mass balance loop
+    ### Diffusion and mass balance loop
     for t in range(time_steps):
         try:
             # Step 4.1: Update diffusion in spherical coordinates
@@ -336,23 +333,25 @@ def run_diffusion_spherical(D, radius_melt, radius_melt_film, radius_fluid_inclu
                 # Update concentration using the spherical Laplacian:
                 C_new[i] = C[i] + D * dt * (d2C_dr2 + (2 / r[i]) * dC_dr)
 
-
-            # Step 4.2: Apply boundary conditions
+            # Apply boundary conditions
             C_new[0] = C_new[1]  # Symmetry condition at r = 0
             C_new[-1] = C_new[-2]  # No-flux condition at outer boundary
             # interface_index = np.argmax(r >= radius_fluid_inclusion) # At fluid inclusion and melt film interface
             # C_new[interface_index] = C_new[interface_index + 1]  # No-flux condition at interface
             C = C_new
 
-            # Step 4.3: Compute average sulfur concentration in the melt film
+            # Compute average sulfur concentration in the melt film
             S_mf_diffusion = np.mean(C[melt_film_mask])  # Average S in melt film
+            # S_mf_min = np.nanmin(C[melt_film_mask])  # Average S in melt film
+            # S_mf_max = np.nanmax(C[melt_film_mask])  # Average S in melt film
             print(round(t * dt, 4), 'seconds, melt film S :', round(S_mf_diffusion, 4))
+            # 'min', round(S_mf_min, 4), 'max', round(S_mf_max, 4))
 
-            # Step 4.4: Compute change in melt mass
+            # Compute change in melt mass
             deltaS = S_mf_diffusion - S_melt_init
             X_mf_step_new = mass_melt + mass_melt * deltaS / 10**6
 
-            # Step 4.5: Solve new mass balance equation
+            # Solve new mass balance equation
             S_mf_new, S_FI_step_calc, X_FI_step_calc, X_mf_step_calc = solve_one_mass_balance_step(
                 S_FI_init_val=S_FI_init,
                 S_mf_init_val=S_mf_diffusion,
@@ -362,12 +361,12 @@ def run_diffusion_spherical(D, radius_melt, radius_melt_film, radius_fluid_inclu
             )
             print(round(S_mf_new, 4), round(S_FI_step_calc), X_FI_step_calc, X_mf_step_calc)
 
-            # Step 4.6: Update sulfur concentrations
+            # Update sulfur concentrations
             S_FI_over_time[t] = S_FI_step_calc  # Track sulfur in the fluid inclusion
             S_mf_over_time[t] = S_mf_diffusion  # Track sulfur in the melt film
             C[fluid_inclusion_mask] = S_FI_step_calc  # Update fluid inclusion concentration
 
-            # Step 4.7: Save the concentration profile at intervals
+            # Save the concentration profile at intervals
             if t % save_interval == 0:
                 C_profile[t // save_interval, :] = C
 
@@ -376,7 +375,7 @@ def run_diffusion_spherical(D, radius_melt, radius_melt_film, radius_fluid_inclu
             print(f"Error at time {t * dt} seconds: {e}")
             break
 
-    ### Step 5: Return results even if terminated early
+    ### Return results even if terminated early
     return C_profile[:t // save_interval + 1], S_FI_over_time[:t], S_mf_over_time[:t], dr, dt, save_interval
 
 
@@ -385,7 +384,7 @@ def run_diffusion_spherical(D, radius_melt, radius_melt_film, radius_fluid_inclu
 # Parameters
 D = 1e-12  # Diffusivity (m^2/s)
 radius_melt = 50*1e-6  # Radius of the melt (m)
-radius_melt_film = 1*1e-6  # Radius of the melt film (m)
+radius_melt_film = 0.1*1e-6  # Radius of the melt film (m)
 radius_fluid_inclusion = 8*1e-6  # Radius of the fluid inclusion (m)
 total_radius = radius_melt + radius_melt_film + radius_fluid_inclusion
 
@@ -394,6 +393,7 @@ S_FI_init = 0 # Sulfur concentration in the fluid inclusion (ppm)
 
 density_melt = 2700 # kg/m^3
 density_FI = 230 # kg/m^3
+KD = 100 
 
 # Mass of the fluid inclusion
 volume_fluid_inclusion = (4/3) * np.pi * radius_fluid_inclusion**3
@@ -404,15 +404,14 @@ radius_outer_melt = radius_fluid_inclusion + radius_melt_film
 volume_total_melt = ((4/3) * np.pi * (radius_outer_melt**3)) - volume_fluid_inclusion
 mass_melt = density_melt * volume_total_melt
 
-C_profile, S_FI_over_time, S_mf_over_time, dr, dt, save_interval = run_diffusion_spherical(D, radius_melt, radius_melt_film, radius_fluid_inclusion,
-                                                                            S_melt_init, S_FI_init, mass_FI, mass_melt, 
-                                                                            KD, total_time=30)
+C_profile_010, S_FI_over_time_010, S_mf_over_time_010, dr_010, dt_010, save_interval_010 = run_diffusion_spherical(D, radius_melt, radius_melt_film, radius_fluid_inclusion,
+                                                                                           S_melt_init, S_FI_init, mass_FI, mass_melt, 
+                                                                                           KD, total_time=30)
 
 # %%
 
-np.savez('results/spherical_C_profile.npz', C_profile=C_profile, S_FI_over_time=S_FI_over_time, S_mf_over_time=S_mf_over_time, dr=dr, dt=dt, save_interval=save_interval)
-np.savez('results/spherical_S_results.npz', S_FI_over_time=S_FI_over_time, S_mf_over_time=S_mf_over_time, dr=dr, dt=dt, save_interval=save_interval)
-
+np.savez('results/spherical_C_profile_010.npz', C_profile=C_profile_010, S_FI_over_time=S_FI_over_time_010, S_mf_over_time=S_mf_over_time_010, dr=dr_010, dt=dt_010, save_interval=save_interval_010)
+np.savez('results/spherical_S_results_010.npz', S_FI_over_time=S_FI_over_time_010, S_mf_over_time=S_mf_over_time_010, dr=dr_010, dt=dt_010, save_interval=save_interval_010)
 
 # %%
 
@@ -422,8 +421,8 @@ import matplotlib.gridspec as gridspec
 
 def animate_diffusion_full_cross_section(C_profile, C_profile_molperc, r, dt, 
                                           radius_fluid_inclusion,
-                                          save_path='results/diffusion_full_cross_section.gif', 
-                                          frame_step=25):
+                                          save_path='results/diffusion_full_cross_section.gif',
+                                          frame_step=1):
     """
     Create an animation of sulfur diffusion with a full 2D cross-section (XZ-plane)
     and a 1D transect. The two subplots will be of equal size, and the two colorbars 
@@ -561,37 +560,68 @@ def animate_diffusion_full_cross_section(C_profile, C_profile_molperc, r, dt,
 
 # %% 
 
-C_profile_molperc = np.copy(C_profile)  # Create a copy of C_profile
-r = np.arange(0, total_radius + dr, dr)  # Radial grid
-dr = radius_melt_film / 20
+C_profile_molperc = np.copy(C_profile_15)  # Create a copy of C_profile
+r = np.arange(0, total_radius + dr_15, dr_15)  # Radial grid
+dr = radius_melt_film # / 20
 fluid_inclusion_mask = r <= radius_fluid_inclusion  # Mask for the fluid inclusion region
-C_profile_molperc[:, fluid_inclusion_mask] = convert_s_ppm_to_so2_molperc(C_profile[:, fluid_inclusion_mask])
+C_profile_molperc[:, fluid_inclusion_mask] = convert_s_ppm_to_so2_molperc(C_profile_15[:, fluid_inclusion_mask])
 save_interval=5
 
 # animate_diffusion_full_cross_section(C_profile, r, dt, save_path='diffusion_full_cross_section.gif')
-animate_diffusion_full_cross_section(C_profile, C_profile_molperc, r, dt, radius_fluid_inclusion, 
-                                     save_path='results/diffusion_full_cross_section.gif')
+animate_diffusion_full_cross_section(C_profile_15, C_profile_molperc, r, dt_15, radius_fluid_inclusion, 
+                                     save_path='results/diffusion_full_cross_section_test.gif')
 
 # %% 
 
 # Create a time axis (in seconds) that matches S_FI_over_time.
-time_array = np.arange(len(S_FI_over_time)) * dt
-S_FI_over_time_molperc = convert_s_ppm_to_so2_molperc(S_FI_over_time)
 
-fig, ax1 = plt.subplots(figsize=(8, 6))
+results_15 = np.load('results/spherical_S_results_15.npz')
+time_array_15 = np.arange(len(results_15['S_FI_over_time'])) * results_15['dt']
+S_FI_over_time_molperc_15 = convert_s_ppm_to_so2_molperc(results_15['S_FI_over_time'])
+
+results_1 = np.load('results/spherical_S_results_1.npz')
+time_array_1 = np.arange(len(results_1['S_FI_over_time'])) * results_1['dt']
+S_FI_over_time_molperc_1 = convert_s_ppm_to_so2_molperc(results_1['S_FI_over_time'])
+
+results_050 = np.load('results/spherical_S_results.npz')
+time_array_050 = np.arange(len(results_050['S_FI_over_time'])) * results_050['dt']
+S_FI_over_time_molperc_050 = convert_s_ppm_to_so2_molperc(results_050['S_FI_over_time'])
+
+results_005 = np.load('results/spherical_S_results.npz')
+time_array_005 = np.arange(len(results_005['S_FI_over_time'])) * results_005['dt']
+S_FI_over_time_molperc_005 = convert_s_ppm_to_so2_molperc(results_005['S_FI_over_time'])
+
+results_003 = np.load('results/spherical_S_results.npz')
+time_array_003 = np.arange(len(results_003['S_FI_over_time'])) * results_003['dt']
+S_FI_over_time_molperc_003 = convert_s_ppm_to_so2_molperc(results_003['S_FI_over_time'])
+
+results_001 = np.load('results/spherical_S_results_001.npz')
+time_array_001 = np.arange(len(results_001['S_FI_over_time'])) * results_001['dt']
+S_FI_over_time_molperc_001 = convert_s_ppm_to_so2_molperc(results_001['S_FI_over_time'])
+
+
+fig, ax2 = plt.subplots(figsize=(8, 6))
 # Primary y-axis for S_mf (ppm)
-ax1.plot(time_array, S_mf_over_time, lw=2, label='Sulfur in Melt Film (ppm)', color='#E42211')
-ax1.set_xlabel('Time (s)')
-ax1.set_ylabel('$\\mathregular{{S_{{melt film}}}}$ (ppm)', color='#E42211')
-ax1.tick_params(axis='y', labelcolor='#E42211')
+# ax1.plot(time_array, S_mf_over_time, lw=2, ls='--', label='Sulfur in Melt Film (ppm), dx=1', color='#E42211')
+# ax1.plot(time_array_smalldx, results_005['S_mf_over_time'], lw=2, label='Sulfur in Melt Film (ppm), dx<1', color='#E42211')
+# ax1.set_xlabel('Time (s)')
+# ax1.set_ylabel('$\\mathregular{{S_{{melt film}}}}$ (ppm)', color='#E42211')
+# ax1.tick_params(axis='y', labelcolor='#E42211')
+# ax1.legend(fontsize=10, loc='lower center')
 
 # Secondary y-axis for S_FI (mol%)
-ax2 = ax1.twinx()
-ax2.plot(time_array, S_FI_over_time_molperc, ls='-.', lw=3, label='Sulfur in Fluid Inclusion (mol%)', color='#0A306B', alpha=0.5)
+# ax2 = ax1.twinx()
+# ax2.plot(time_array_15, S_FI_over_time_molperc_15, lw=2, ls='--', label='Sulfur in FI, dx=1.5 (mol%)', color='grey') #, alpha=0.5)
+# ax2.plot(time_array_1, S_FI_over_time_molperc_1, lw=2, ls='--', label='Sulfur in FI, dx=1 (mol%)', color='#0A306B') #, alpha=0.5)
+# ax2.plot(time_array_050, S_FI_over_time_molperc_050, lw=2, label='Sulfur in FI, dx=0.050 (mol%)', color='magenta')
+ax2.plot(time_array_005, results_005['S_FI_over_time']/results_005['S_mf_over_time'], lw=2, label='Sulfur in FI, dx=0.005 (mol%)', color='k')
+# ax2.plot(time_array_003, S_FI_over_time_molperc_003, lw=2, ls='--', label='Sulfur in FI, dx=0.003 (mol%)', color='cyan')
+# ax2.plot(time_array_001, S_FI_over_time_molperc_001, lw=2, ls='--', label='Sulfur in FI, dx=0.001 (mol%)', color='red')
 ax2.set_ylabel('$\\mathregular{{S_{{FI}}}}$ (mol%)', color='#0A306B')
 ax2.tick_params(axis='y', labelcolor='#0A306B')
+ax2.legend(fontsize=10)
 fig.tight_layout()
-plt.savefig('results/diffusion_over_time.pdf')
+plt.savefig('results/diffusion_over_time_dx.pdf')
 plt.show()
 
 # %%
